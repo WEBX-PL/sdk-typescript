@@ -8,7 +8,7 @@ test("fromResponse parses JSON error envelope and headers", async () => {
       code: "invalid_body",
       message: "events[0].category is required",
       requestId: "req_xyz",
-      docsUrl: "https://wepeople.webx.pl/developers/docs#errors",
+      docsUrl: "https://wepeople.app/developers/reference#errors",
     },
   };
   const res = new Response(JSON.stringify(body), {
@@ -22,7 +22,7 @@ test("fromResponse parses JSON error envelope and headers", async () => {
   assert.equal(err.code, "invalid_body");
   assert.match(err.message, /events\[0\]\.category is required/);
   assert.equal(err.requestId, "req_xyz");
-  assert.equal(err.docsUrl, "https://wepeople.webx.pl/developers/docs#errors");
+  assert.equal(err.docsUrl, "https://wepeople.app/developers/reference#errors");
   assert.equal(err.retryable, false);
 });
 

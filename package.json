@@ -1,6 +1,6 @@
 {
   "name": "@wepeople/sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Official TypeScript SDK for the WePeople Ingest API.",
   "license": "MIT",
   "author": "WePeople",

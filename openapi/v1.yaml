@@ -16,7 +16,7 @@ info:
     tickets. All timestamps are ISO 8601 with timezone offsets.
 
 servers:
-  - url: https://wepeople.webx.pl
+  - url: https://wepeople.app
     description: Production
 
 security:
