@@ -1,0 +1,454 @@
+openapi: 3.1.0
+info:
+  title: WePeople Ingest API
+  version: "1.0.0"
+  summary: Push events and metric snapshots from your services into WePeople.
+  description: |
+    The WePeople Ingest API is the private integration surface your developers
+    use to stream events — CRM tickets, CI pipelines, AI agent activity,
+    internal tools — into the monitoring timeline and user strip.
+
+    This API is scoped to your own organization. Authenticate with a
+    `wp_live_*` bearer token generated from the Developer tab in settings.
+    Keys are private, per-organization, and never shared across tenants.
+
+    Every error response includes a `requestId` you can cite in support
+    tickets. All timestamps are ISO 8601 with timezone offsets.
+
+servers:
+  - url: https://your-host.example.com
+    description: Production deployment
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Ingest
+    description: Endpoints for third-party services to push data into WePeople.
+
+paths:
+  /api/v1/ingest/ping:
+    get:
+      tags: [Ingest]
+      summary: Health check and token validation.
+      operationId: ping
+      responses:
+        "200":
+          description: Key is valid.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-API-Version:
+              $ref: "#/components/headers/ApiVersion"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PingResponse"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "402":
+          $ref: "#/components/responses/PlanError"
+
+  /api/v1/ingest/events:
+    post:
+      tags: [Ingest]
+      summary: Ingest a batch of events.
+      description: |
+        Events land in the monitoring timeline as `custom:<app-slug>` rows,
+        grouped per worker. The batch is processed in order and returns a
+        `207 Multi-Status` when some events are rejected so callers can
+        surgically retry without duplicating accepted events.
+
+        Send `Idempotency-Key` to guarantee at-most-once semantics across
+        retries; the first response for the key/id pair is replayed for 10
+        minutes.
+      operationId: ingestEvents
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestEventBatch"
+            examples:
+              ticket:
+                summary: Ticket resolved event
+                value:
+                  events:
+                    - eventType: ticket.resolved
+                      category: project_management
+                      timestamp: "2026-04-19T12:30:00Z"
+                      actor:
+                        email: alex@acme.com
+                      duration: 180
+                      metadata:
+                        ticket_id: SUP-431
+                        priority: high
+      responses:
+        "202":
+          description: All events accepted and persisted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/RequestId"
+            X-RateLimit-Limit:
+              $ref: "#/components/headers/RateLimitLimit"
+            X-RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimitRemaining"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestBatchResponse"
+        "207":
+          description: Partial success — inspect `results.rejected`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestBatchResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "402":
+          $ref: "#/components/responses/PlanError"
+        "403":
+          $ref: "#/components/responses/ForbiddenEventType"
+        "413":
+          $ref: "#/components/responses/BatchTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/ingest/snapshots:
+    post:
+      tags: [Ingest]
+      summary: Push a point-in-time metric snapshot.
+      description: |
+        Snapshots describe the current state of a worker's external system
+        (open tickets, deployment queue depth, etc.) and are rendered as a
+        card on the monitoring user strip. Only the most recent snapshot per
+        worker per app is shown; older snapshots remain queryable as events.
+      operationId: ingestSnapshot
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestSnapshot"
+            examples:
+              tickets:
+                summary: CRM ticket snapshot
+                value:
+                  snapshotType: tickets_open
+                  timestamp: "2026-04-19T12:30:00Z"
+                  actor:
+                    email: alex@acme.com
+                  metrics:
+                    tickets_open: 7
+                    tickets_closed_today: 3
+                    sla_attainment: 0.92
+      responses:
+        "202":
+          description: Snapshot accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/AuthError"
+        "402":
+          $ref: "#/components/responses/PlanError"
+        "413":
+          $ref: "#/components/responses/BatchTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: wp_live_*
+      description: |
+        API keys are issued from the **Developer** tab in organization
+        settings. They are shown once on creation — store them in your
+        secrets manager immediately.
+
+  headers:
+    RequestId:
+      description: Opaque identifier for this request, cite in support tickets.
+      schema:
+        type: string
+    ApiVersion:
+      description: Current API version.
+      schema:
+        type: string
+        example: "2026-04-01"
+    RateLimitLimit:
+      description: Per-key request budget for the current window.
+      schema:
+        type: integer
+    RateLimitRemaining:
+      description: Remaining requests in the current window.
+      schema:
+        type: integer
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema:
+        type: integer
+
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      description: |
+        Opaque string ≤ 200 chars. Replays the first response for a given
+        `(apiKey, key)` pair for 10 minutes. Use it on every retry.
+      schema:
+        type: string
+        maxLength: 200
+
+  schemas:
+    EventCategory:
+      type: string
+      description: High-level bucket used by the monitoring dashboard.
+      enum:
+        - communication
+        - project_management
+        - code
+        - calendar
+        - design
+        - ai_tools
+        - other
+
+    Actor:
+      type: object
+      description: |
+        Identifies the worker the event belongs to. Send one of `workerId`,
+        `externalId`, or `email`. When no matching worker exists, the server
+        auto-creates one and links it to this app's synthetic integration
+        connection (`custom:<slug>`).
+      properties:
+        workerId:
+          type: string
+          description: Existing WePeople `Worker.id`.
+        externalId:
+          type: string
+          maxLength: 200
+          description: Your system's stable ID (preferred over `email`).
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+          maxLength: 200
+      minProperties: 1
+
+    IngestEvent:
+      type: object
+      required: [eventType, category, actor]
+      properties:
+        eventType:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{1,62}[A-Za-z0-9]$"
+          example: ticket.resolved
+        category:
+          $ref: "#/components/schemas/EventCategory"
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO 8601 with offset. Defaults to now when omitted.
+        duration:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          description: Seconds.
+        actor:
+          $ref: "#/components/schemas/Actor"
+        metadata:
+          type: object
+          additionalProperties: true
+          description: ≤ 16 KB when JSON-serialized.
+
+    IngestEventBatch:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/IngestEvent"
+
+    IngestBatchResponse:
+      type: object
+      required: [requestId, accepted, rejected, batchLimit, results]
+      properties:
+        requestId:
+          type: string
+        accepted:
+          type: integer
+        rejected:
+          type: integer
+        batchLimit:
+          type: integer
+        results:
+          type: object
+          properties:
+            accepted:
+              type: array
+              items:
+                type: object
+                properties:
+                  eventType: { type: string }
+                  timestamp: { type: string, format: date-time }
+            rejected:
+              type: array
+              items:
+                type: object
+                properties:
+                  index: { type: integer }
+                  code: { type: string }
+                  message: { type: string }
+
+    IngestSnapshot:
+      type: object
+      required: [snapshotType, actor, metrics]
+      properties:
+        snapshotType:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{1,62}[A-Za-z0-9]$"
+          example: tickets_open
+        timestamp:
+          type: string
+          format: date-time
+        actor:
+          $ref: "#/components/schemas/Actor"
+        metrics:
+          type: object
+          description: |
+            Keys are metric identifiers. Values are either numbers (preferred)
+            or short string labels. A richer form `{ "value": 0.92, "unit":
+            "ratio", "label": "SLA %" }` is also supported.
+          additionalProperties:
+            oneOf:
+              - type: number
+              - type: string
+              - type: object
+                properties:
+                  value: { type: number }
+                  unit:
+                    type: string
+                    enum: [count, minutes, ratio, percentage, score]
+                  label: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true
+
+    SnapshotResponse:
+      type: object
+      required: [requestId, ok]
+      properties:
+        requestId: { type: string }
+        ok: { type: boolean }
+        snapshotType: { type: string }
+        worker:
+          type: object
+          properties:
+            id: { type: string }
+            displayName: { type: string }
+
+    PingResponse:
+      type: object
+      required: [ok, organizationId, app]
+      properties:
+        ok: { type: boolean }
+        organizationId: { type: string }
+        app:
+          type: object
+          properties:
+            id: { type: string }
+            slug: { type: string }
+            name: { type: string }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code.
+              enum:
+                - missing_auth
+                - invalid_key
+                - api_disabled
+                - plan_limit
+                - quota_exceeded
+                - rate_limited
+                - forbidden_event_type
+                - invalid_body
+                - batch_too_large
+                - missing_actor
+                - worker_not_found
+                - internal_error
+            message:
+              type: string
+            requestId:
+              type: string
+            docsUrl:
+              type: string
+              format: uri
+
+  responses:
+    AuthError:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PlanError:
+      description: Plan does not include API access or hit a plan cap.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ValidationError:
+      description: Zod validation failed. `error.message` lists the first issues.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BatchTooLarge:
+      description: Body exceeds 1 MB or batch exceeds 500 events.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ForbiddenEventType:
+      description: eventType is not in the app's `allowedEventTypes` whitelist.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Per-key, per-org, or monthly quota exceeded.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+        X-RateLimit-Limit:
+          $ref: "#/components/headers/RateLimitLimit"
+        X-RateLimit-Remaining:
+          $ref: "#/components/headers/RateLimitRemaining"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

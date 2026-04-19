@@ -1,0 +1,25 @@
+node_modules
+dist
+.turbo
+.next
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode
+.idea
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Env
+.env
+.env.*
+!.env.example

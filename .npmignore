@@ -1,0 +1,10 @@
+src
+tests
+examples
+.github
+.cursor
+tsconfig.json
+pnpm-lock.yaml
+*.tsbuildinfo
+node_modules
+.DS_Store

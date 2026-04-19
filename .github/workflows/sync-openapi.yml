@@ -1,0 +1,84 @@
+name: Sync OpenAPI spec
+
+# Pulls the latest `apps/web/public/openapi/v1.yaml` from WEBX-PL/wepeople@main,
+# regenerates `src/generated/openapi.d.ts`, and opens a PR if anything changed.
+
+on:
+  schedule:
+    # Daily at 06:17 UTC — off-peak, jittered off the hour.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Upstream branch to pull the spec from
+        required: false
+        default: main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch upstream OpenAPI spec
+        env:
+          UPSTREAM_BRANCH: ${{ github.event.inputs.branch || 'main' }}
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/WEBX-PL/wepeople/${UPSTREAM_BRANCH}/apps/web/public/openapi/v1.yaml" \
+            -o openapi/v1.yaml
+          echo "--- First 20 lines of pulled spec ---"
+          head -20 openapi/v1.yaml
+
+      - name: Regenerate types
+        run: pnpm generate
+
+      - name: Typecheck
+        run: pnpm lint
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if [[ -z "$(git status --porcelain openapi src/generated)" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No drift. Upstream spec matches local copy."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore(openapi): sync spec from WEBX-PL/wepeople@main"
+          title: "chore(openapi): sync spec from upstream"
+          body: |
+            Automated sync from
+            [`WEBX-PL/wepeople`](https://github.com/WEBX-PL/wepeople/blob/main/apps/web/public/openapi/v1.yaml).
+
+            - Copied the latest `v1.yaml` into `openapi/`.
+            - Re-ran `pnpm generate` to refresh `src/generated/openapi.d.ts`.
+
+            Review the diff for breaking changes before merging. If the
+            public surface changes, bump the package version and cut a
+            release.
+          branch: automation/sync-openapi
+          delete-branch: true
+          labels: |
+            automation
+            openapi
