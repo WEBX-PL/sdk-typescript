@@ -45,10 +45,11 @@ jobs:
           pnpm test
           pnpm build
 
-      - name: Publish to npm
-        run: pnpm publish --no-git-checks --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest
+
+      - name: Publish to npm (Trusted Publishing via OIDC)
+        run: npm publish --access public --provenance
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
