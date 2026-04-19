@@ -16,8 +16,8 @@ info:
     tickets. All timestamps are ISO 8601 with timezone offsets.
 
 servers:
-  - url: https://your-host.example.com
-    description: Production deployment
+  - url: https://wepeople.webx.pl
+    description: Production
 
 security:
   - bearerAuth: []

@@ -38,7 +38,7 @@ import { WePeopleClient } from "@wepeople/sdk";
 
 const client = new WePeopleClient({
   apiKey: process.env.WEPEOPLE_API_KEY!,
-  baseUrl: "https://wepeople.acme.com",
+  baseUrl: "https://wepeople.webx.pl",
 });
 
 await client.ping();
@@ -172,17 +172,18 @@ Releases are tag-driven. Push a `vX.Y.Z` tag on `main` and the
 [`release.yml`](./.github/workflows/release.yml) workflow publishes to npm
 with provenance.
 
-Requirements (one-time setup):
+Publishing uses npm [Trusted Publishing](https://docs.npmjs.com/trusted-publishers) via GitHub Actions OIDC — no tokens, provenance included. One-time setup:
 
-1. Create the `@wepeople` org on [npmjs.com](https://www.npmjs.com/).
-2. Add an automation token as a repo secret named `NPM_TOKEN`.
-3. Ensure the workflow has `id-token: write` permission (already set).
+1. Create the `@wepeople` scope on [npmjs.com](https://www.npmjs.com/) and publish `0.1.0` manually.
+2. On the package's **Access** page, register the trusted publisher:
+   GitHub Actions &middot; `WEBX-PL/sdk-typescript` &middot; workflow `release.yml`.
+3. Every subsequent tag push triggers `release.yml` and publishes automatically.
 
 ## Links
 
-- [OpenAPI spec (hosted)](https://wepeople.com/openapi/v1.yaml)
-- [Developer guide](https://wepeople.com/developers/docs)
-- [API reference](https://wepeople.com/developers/reference)
+- [OpenAPI spec (hosted)](https://wepeople.webx.pl/openapi/v1.yaml)
+- [Developer guide](https://wepeople.webx.pl/developers/docs)
+- [API reference](https://wepeople.webx.pl/developers/reference)
 - [Issues](https://github.com/WEBX-PL/sdk-typescript/issues)
 
 ## License
