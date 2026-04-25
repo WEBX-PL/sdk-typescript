@@ -2,6 +2,10 @@ name: Sync OpenAPI spec
 
 # Pulls the latest `apps/web/public/openapi/v1.yaml` from WEBX-PL/wepeople@main,
 # regenerates `src/generated/openapi.d.ts`, and opens a PR if anything changed.
+#
+# Upstream is a private repo: raw.githubusercontent.com URLs are unauthenticated
+# and return 404. Configure repo secret WEPEOPLE_SYNC_PAT (fine-grained PAT:
+# Contents: Read on WEBX-PL/wepeople, or classic PAT with repo scope for that repo).
 
 on:
   schedule:
@@ -39,8 +43,17 @@ jobs:
       - name: Fetch upstream OpenAPI spec
         env:
           UPSTREAM_BRANCH: ${{ github.event.inputs.branch || 'main' }}
+          WEPEOPLE_SYNC_PAT: ${{ secrets.WEPEOPLE_SYNC_PAT }}
         run: |
-          curl -fsSL "https://raw.githubusercontent.com/WEBX-PL/wepeople/${UPSTREAM_BRANCH}/apps/web/public/openapi/v1.yaml" \
+          if [[ -z "${WEPEOPLE_SYNC_PAT}" ]]; then
+            echo "::error::Missing repo secret WEPEOPLE_SYNC_PAT. WEBX-PL/wepeople is private; configure a PAT with read access to that repository."
+            exit 1
+          fi
+          curl -fsSL \
+            -H "Authorization: Bearer ${WEPEOPLE_SYNC_PAT}" \
+            -H "Accept: application/vnd.github.raw" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/WEBX-PL/wepeople/contents/apps/web/public/openapi/v1.yaml?ref=${UPSTREAM_BRANCH}" \
             -o openapi/v1.yaml
           echo "--- First 20 lines of pulled spec ---"
           head -20 openapi/v1.yaml
