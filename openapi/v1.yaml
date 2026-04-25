@@ -1,3 +1,14 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SOURCE OF TRUTH — hand-maintained, served at https://wepeople.app/openapi/v1.yaml
+#
+# Any change to a route under apps/web/src/app/api/v1/** or a Zod schema in
+# apps/web/src/lib/developer-api/schema.ts MUST be mirrored here in the same PR.
+# The downstream SDK (WEBX-PL/sdk-typescript) regenerates its TypeScript types
+# from this file — drift silently publishes wrong types to npm.
+#
+# Checklist + rationale: docs/agents/developer-platform.md §Keeping the OpenAPI
+# spec in sync.
+# ─────────────────────────────────────────────────────────────────────────────
 openapi: 3.1.0
 info:
   title: WePeople Ingest API
